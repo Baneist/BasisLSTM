@@ -186,7 +186,7 @@ class channel_AutoCorrelationLayer(nn.Module):
             
             attn = self.dropout(attn)
 
-            out = torch.matmul(attn, values)    #(H,L,D)
+            out = torch.matmul(attn, values)    #(B,H,L,d_keys)
 
             out = out.permute(0,2,1,3).reshape(B,L,-1)
             

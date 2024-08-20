@@ -34,7 +34,7 @@ def vali(vali_data, vali_loader, criterion, epoch, writer, flag='vali'):
             
             real_batch_x = batch_x
             
-            outputs,m,attn_x1,attn_x2,attn_y1,attn_y2 = model(batch_x,index.float().to(device),batch_y,train=False,y_mark=batch_y_mark)
+            outputs,m = model(batch_x,index.float().to(device),batch_y,train=False,y_mark=batch_y_mark)
             
             pred = outputs.detach().cpu()
             true = batch_y.detach().cpu()
@@ -53,7 +53,7 @@ def vali(vali_data, vali_loader, criterion, epoch, writer, flag='vali'):
     model.train()
     return total_loss
 
-def train():
+def train(ccc):
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log_and_print('[Info] Number of parameters: {}'.format(num_params))
     train_set, train_loader = data_provider(args, "train")
@@ -67,7 +67,6 @@ def train():
     # optimizer = AdaBelief(model.parameters(), lr=args.learning_rate, eps=1e-16, betas=(0.9,0.999), weight_decouple = True, rectify = False) 
     criterion = nn.MSELoss()
     criterion_view = nn.MSELoss(reduction='none')
-
     train_steps = len(train_loader)
 
     writer = SummaryWriter(os.path.join(record_dir,'event'))
@@ -86,7 +85,6 @@ def train():
         epoch_time = time.time()
         for i, (batch_x, batch_y, batch_x_mark, batch_y_mark,index) in enumerate(train_loader):
             optimizer.zero_grad()
-
             # to cuda
             batch_x = batch_x.float().to(device) # (B,L,C)
             batch_y = batch_y.float().to(device) # (B,L,C)
@@ -95,9 +93,9 @@ def train():
             f_dim = -1 if args.features == 'MS' else 0
             batch_y = batch_y[:, -args.pred_len:, f_dim:].to(device)
 
-            outputs,loss_infonce,loss_smooth,attn_x1,attn_x2,attn_y1,attn_y2 = model.forward(batch_x,index.float().to(device),batch_y,y_mark=batch_y_mark)
+            outputs,loss_infonce,loss_smooth = model(batch_x,index.float().to(device),batch_y,y_mark=batch_y_mark)
             
-            loss_p = criterion(outputs, batch_y)
+            loss_p = criterion(outputs, batch_y[:,:,:ccc])
             lam1 = args.loss_weight_prediction
             lam2 = args.loss_weight_infonce
             lam3 = args.loss_weight_smooth
@@ -186,7 +184,7 @@ def test(setting='setting',test=True):
             f_dim = -1 if args.features == 'MS' else 0
             batch_y = batch_y[:, -args.pred_len:, f_dim:].to(device)
             
-            outputs,m,attn_x1,attn_x2,attn_y1,attn_y2 = model(batch_x,index.float().to(device),batch_y,train=False,y_mark=batch_y_mark)
+            outputs,m = model(batch_x,index.float().to(device),batch_y,train=False,y_mark=batch_y_mark)
                 
             outputs = outputs.detach().cpu().numpy()
             batch_y = batch_y.detach().cpu().numpy()
@@ -312,15 +310,15 @@ if __name__ == "__main__":
     parser.add_argument('--loss_weight_prediction', type=float, default=1.0, help='weight of prediction loss')
     parser.add_argument('--loss_weight_infonce', type=float, default=1.0, help='weight of infonce loss')
     parser.add_argument('--loss_weight_smooth', type=float, default=1.0, help='weight of smooth loss')
-
-
+    parser.add_argument('--var_num', type=int, default=7, help='var num')
+    parser.add_argument('--d_layer', type=int, default=2, help='mlstm layer num')
     #checkpoint_path
     parser.add_argument('--check_point',type=str,default='checkpoint',help='check point path, relative path')
 
     args = parser.parse_args()
     
     record_dir = os.path.join('records',args.data_path.split('.')[0],'features_'+args.features,\
-                              'seq_len'+str(args.seq_len)+','+'pred_len'+str(args.pred_len))
+                              'seq_len'+str(args.seq_len)+','+'pred_len'+str(args.pred_len)) + ',v='+str(args.var_num)
     if not os.path.exists(record_dir):
         os.makedirs(record_dir)
     
@@ -333,18 +331,17 @@ if __name__ == "__main__":
         with open(logger_file, "w") as file:
             file.truncate(0)
     logging.basicConfig(filename=logger_file, level=logging.INFO)
-    
     log_and_print('Args in experiment:')
     log_and_print(args)
 
     device = init_dl_program(args.device, seed=0,max_threads=8) if torch.cuda.is_available() else "cpu"
-    # device = "cuda:{}".format(args.device) if torch.cuda.is_available() else "cpu"
-    model = Basisformer(args.seq_len,args.pred_len,args.d_model,args.heads,args.N,args.block_nums,args.bottleneck,args.map_bottleneck,device,args.tau, 7)
+    #device = "cuda:{}".format(args.device) if torch.cuda.is_available() else "cpu"
+    model = Basisformer(args.seq_len,args.pred_len,args.d_model,args.heads,args.N,args.block_nums,args.bottleneck,args.map_bottleneck,device,args.tau, args.var_num,args.d_layer)
 
     log_and_print(model)
     model.to(device)  ##
     if args.is_training:
-        train()
+        train(args.var_num)
     test()
 
 
